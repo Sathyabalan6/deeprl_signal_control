@@ -1,5 +1,5 @@
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 from agents.utils import *
 import bisect
 
@@ -16,12 +16,12 @@ class ACPolicy:
 
     def forward(self, ob, *_args, **_kwargs):
         raise NotImplementedError()
-
+#actor code 
     def _build_out_net(self, h, out_type):
         if out_type == 'pi':
             pi = fc(h, out_type, self.n_a, act=tf.nn.softmax)
             return tf.squeeze(pi)
-        else:
+        else:#critic code
             v = fc(h, out_type, 1, act=lambda x: x)
             return tf.squeeze(v)
 
@@ -37,7 +37,7 @@ class ACPolicy:
         if len(out_values) == 1:
             return out_values[0]
         return out_values
-
+#loss of the actor -code // critic code
     def prepare_loss(self, v_coef, max_grad_norm, alpha, epsilon):
         self.A = tf.placeholder(tf.int32, [self.n_step])
         self.ADV = tf.placeholder(tf.float32, [self.n_step])
@@ -73,15 +73,16 @@ class ACPolicy:
 
 
 class LstmACPolicy(ACPolicy):
-    def __init__(self, n_s, n_a, n_w, n_step, n_fc_wave=128, n_fc_wait=32, n_lstm=64, name=None):
+    def __init__(self, n_s, n_a, n_w, n_step, n_fc_wave=128, n_fc_wait=32, n_lstm=64, name=None, n_ev=0):
         super().__init__(n_a, n_s, n_step, 'lstm', name)
         self.n_lstm = n_lstm
         self.n_fc_wait = n_fc_wait
         self.n_fc_wave = n_fc_wave
         self.n_w = n_w
-        self.ob_fw = tf.placeholder(tf.float32, [1, n_s + n_w]) # forward 1-step
+        self.n_ev = n_ev
+        self.ob_fw = tf.placeholder(tf.float32, [1, n_s + n_w + n_ev])
         self.done_fw = tf.placeholder(tf.float32, [1])
-        self.ob_bw = tf.placeholder(tf.float32, [n_step, n_s + n_w]) # backward n-step
+        self.ob_bw = tf.placeholder(tf.float32, [n_step, n_s + n_w + n_ev])
         self.done_bw = tf.placeholder(tf.float32, [n_step])
         self.states = tf.placeholder(tf.float32, [2, n_lstm * 2])
         with tf.variable_scope(self.name):
@@ -107,12 +108,21 @@ class LstmACPolicy(ACPolicy):
             states = self.states[0]
         else:
             states = self.states[1]
-        if self.n_w == 0:
+        if self.n_w == 0 and self.n_ev == 0:
             h = fc(ob, out_type + '_fcw', self.n_fc_wave)
-        else:
+        elif self.n_ev == 0:
             h0 = fc(ob[:, :self.n_s], out_type + '_fcw', self.n_fc_wave)
             h1 = fc(ob[:, self.n_s:], out_type + '_fct', self.n_fc_wait)
             h = tf.concat([h0, h1], 1)
+        elif self.n_w == 0:
+            h0 = fc(ob[:, :self.n_s], out_type + '_fcw', self.n_fc_wave)
+            h1 = fc(ob[:, self.n_s:], out_type + '_fcev', self.n_fc_wait)
+            h = tf.concat([h0, h1], 1)
+        else:
+            h0 = fc(ob[:, :self.n_s], out_type + '_fcw', self.n_fc_wave)
+            h1 = fc(ob[:, self.n_s:self.n_s + self.n_w], out_type + '_fct', self.n_fc_wait)
+            h2 = fc(ob[:, self.n_s + self.n_w:], out_type + '_fcev', self.n_fc_wait)
+            h = tf.concat([h0, h1, h2], 1)
         h, new_states = lstm(h, done, states, out_type + '_lstm')
         out_val = self._build_out_net(h, out_type)
         return out_val, new_states
@@ -164,16 +174,17 @@ class LstmACPolicy(ACPolicy):
 
 
 class FPLstmACPolicy(LstmACPolicy):
-    def __init__(self, n_s, n_a, n_w, n_f, n_step, n_fc_wave=128, n_fc_wait=32, n_fc_fp=32, n_lstm=64, name=None):
+    def __init__(self, n_s, n_a, n_w, n_f, n_step, n_fc_wave=128, n_fc_wait=32, n_fc_fp=32, n_lstm=64, name=None, n_ev=0):
         ACPolicy.__init__(self, n_a, n_s, n_step, 'fplstm', name)
         self.n_lstm = n_lstm
         self.n_fc_wave = n_fc_wave
         self.n_fc_wait = n_fc_wait
         self.n_fc_fp = n_fc_fp
         self.n_w = n_w
-        self.ob_fw = tf.placeholder(tf.float32, [1, n_s + n_w + n_f]) # forward 1-step
+        self.n_ev = n_ev
+        self.ob_fw = tf.placeholder(tf.float32, [1, n_s + n_w + n_f + n_ev])
         self.done_fw = tf.placeholder(tf.float32, [1])
-        self.ob_bw = tf.placeholder(tf.float32, [n_step, n_s + n_w + n_f]) # backward n-step
+        self.ob_bw = tf.placeholder(tf.float32, [n_step, n_s + n_w + n_f + n_ev])
         self.done_bw = tf.placeholder(tf.float32, [n_step])
         self.states = tf.placeholder(tf.float32, [2, n_lstm * 2])
         with tf.variable_scope(self.name):
@@ -200,12 +211,20 @@ class FPLstmACPolicy(LstmACPolicy):
         else:
             states = self.states[1]
         h0 = fc(ob[:, :self.n_s], out_type + '_fcw', self.n_fc_wave)
-        h1 = fc(ob[:, (self.n_s + self.n_w):], out_type + '_fcf', self.n_fc_fp)
-        if self.n_w == 0:
+        fp_start = self.n_s + self.n_w + self.n_ev
+        h1 = fc(ob[:, fp_start:], out_type + '_fcf', self.n_fc_fp)
+        if self.n_w == 0 and self.n_ev == 0:
             h = tf.concat([h0, h1], 1)
-        else:
-            h2 = fc(ob[:, self.n_s: (self.n_s + self.n_w)], out_type + '_fct', self.n_fc_wait)
+        elif self.n_ev == 0:
+            h2 = fc(ob[:, self.n_s:self.n_s + self.n_w], out_type + '_fct', self.n_fc_wait)
             h = tf.concat([h0, h1, h2], 1)
+        elif self.n_w == 0:
+            h2 = fc(ob[:, self.n_s:self.n_s + self.n_ev], out_type + '_fcev', self.n_fc_wait)
+            h = tf.concat([h0, h1, h2], 1)
+        else:
+            h2 = fc(ob[:, self.n_s:self.n_s + self.n_w], out_type + '_fct', self.n_fc_wait)
+            h3 = fc(ob[:, self.n_s + self.n_w:self.n_s + self.n_w + self.n_ev], out_type + '_fcev', self.n_fc_wait)
+            h = tf.concat([h0, h1, h2, h3], 1)
         h, new_states = lstm(h, done, states, out_type + '_lstm')
         out_val = self._build_out_net(h, out_type)
         return out_val, new_states
@@ -271,12 +290,12 @@ class FPFcACPolicy(FcACPolicy):
             self.v = self._build_net('v')
 
     def _build_net(self, out_type):
-        h0 = fc(ob[:, :self.n_s], out_type + '_fcw', self.n_fc_wave)
-        h1 = fc(ob[:, (self.n_s + self.n_w):], out_type + '_fcf', self.n_fc_fp)
+        h0 = fc(self.obs[:, :self.n_s], out_type + '_fcw', self.n_fc_wave)
+        h1 = fc(self.obs[:, (self.n_s + self.n_w):], out_type + '_fcf', self.n_fc_fp)
         if self.n_w == 0:
             h = tf.concat([h0, h1], 1)
         else:
-            h2 = fc(ob[:, self.n_s: (self.n_s + self.n_w)], out_type + '_fct', self.n_fc_wait)
+            h2 = fc(self.obs[:, self.n_s: (self.n_s + self.n_w)], out_type + '_fct', self.n_fc_wait)
             h = tf.concat([h0, h1, h2], 1)
         h = fc(h, out_type + '_fc', self.n_fc)
         return self._build_out_net(h, out_type)
@@ -339,22 +358,32 @@ class QPolicy:
 
 
 class DeepQPolicy(QPolicy):
-    def __init__(self, n_s, n_a, n_w, n_step, n_fc0=128, n_fc=64, name=None):
+    def __init__(self, n_s, n_a, n_w, n_step, n_fc0=128, n_fc=64, name=None, n_ev=0):
         super().__init__(n_a, n_s, n_step, 'dqn', name)
         self.n_fc = n_fc
         self.n_fc0 = n_fc0
         self.n_w = n_w
-        self.S = tf.placeholder(tf.float32, [None, n_s + n_w])
+        self.n_ev = n_ev
+        self.S = tf.placeholder(tf.float32, [None, n_s + n_w + n_ev])
         with tf.variable_scope(self.name + '_q'):
             self.qvalues = self._build_net(self.S)
 
     def _build_net(self, S):
-        if self.n_w == 0:
+        if self.n_w == 0 and self.n_ev == 0:
             h = fc(S, 'q_fcw', self.n_fc0)
+        elif self.n_ev == 0:
+            h0 = fc(S[:, :self.n_s], 'q_fcw', self.n_fc0)
+            h1 = fc(S[:, self.n_s:self.n_s + self.n_w], 'q_fct', self.n_fc0 // 4)
+            h = tf.concat([h0, h1], 1)
+        elif self.n_w == 0:
+            h0 = fc(S[:, :self.n_s], 'q_fcw', self.n_fc0)
+            h1 = fc(S[:, self.n_s:], 'q_fcev', self.n_fc0 // 4)
+            h = tf.concat([h0, h1], 1)
         else:
             h0 = fc(S[:, :self.n_s], 'q_fcw', self.n_fc0)
-            h1 = fc(S[:, self.n_s:], 'q_fct', self.n_fc0 / 4)
-            h = tf.concat([h0, h1], 1)
+            h1 = fc(S[:, self.n_s:self.n_s + self.n_w], 'q_fct', self.n_fc0 // 4)
+            h2 = fc(S[:, self.n_s + self.n_w:], 'q_fcev', self.n_fc0 // 4)
+            h = tf.concat([h0, h1, h2], 1)
         return self._build_fc_net(h, [self.n_fc])
 
     def forward(self, sess, ob):

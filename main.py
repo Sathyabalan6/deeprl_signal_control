@@ -6,12 +6,14 @@ Main function for training and evaluating agents in traffic envs
 import argparse
 import configparser
 import logging
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 import threading
 # from envs.test_env import GymEnv
 from envs.small_grid_env import SmallGridEnv, SmallGridController
 from envs.large_grid_env import LargeGridEnv, LargeGridController
 from envs.real_net_env import RealNetEnv, RealNetController
+from envs.custom_net_env import CustomNetEnv
 from agents.models import A2C, IA2C, MA2C, IQL
 from utils import (Counter, Trainer, Tester, Evaluator,
                    check_dir, copy_file, find_file,
@@ -19,8 +21,8 @@ from utils import (Counter, Trainer, Tester, Evaluator,
                    plot_evaluation, plot_train)
 
 def parse_args():
-    default_base_dir = '/Users/tchu/Documents/rl_test/signal_control_results/eval_sep2019/large_grid'
-    default_config_dir = './config/config_test_large.ini'
+    default_base_dir = './output'
+    default_config_dir = './config/config_test_small.ini'
     parser = argparse.ArgumentParser()
     parser.add_argument('--base-dir', type=str, required=False,
                         default=default_base_dir, help="experiment base dir")
@@ -54,21 +56,30 @@ def init_env(config, port=0, naive_policy=False):
             return SmallGridEnv(config, port=port)
         else:
             env = SmallGridEnv(config, port=port)
-            policy = SmallGridController(env.node_names)
+            policy = SmallGridController(env.node_names, env=env)
             return env, policy
     elif config.get('scenario') == 'large_grid':
         if not naive_policy:
             return LargeGridEnv(config, port=port)
         else:
             env = LargeGridEnv(config, port=port)
-            policy = LargeGridController(env.node_names)
+            policy = LargeGridController(env.node_names, env=env)
             return env, policy
     elif config.get('scenario') == 'real_net':
         if not naive_policy:
             return RealNetEnv(config, port=port)
         else:
             env = RealNetEnv(config, port=port)
-            policy = RealNetController(env.node_names, env.nodes)
+            policy = RealNetController(env.node_names, env.nodes, env=env)
+            return env, policy
+    elif config.get('scenario') == 'custom_net':
+        if not naive_policy:
+            return CustomNetEnv(config, port=port)
+        else:
+            env = CustomNetEnv(config, port=port)
+            # CustomNetController reads phases dynamically from net.xml — no hardcoded NODES dict
+            from envs.custom_net_env import CustomNetController
+            policy = CustomNetController(env.node_names, env=env)
             return env, policy
     elif config.get('scenario') in ['Acrobot-v1', 'CartPole-v0', 'MountainCar-v0']:
         return GymEnv(config.get('scenario'))
@@ -109,16 +120,16 @@ def train(args):
     #                 config['MODEL_CONFIG'], seed=seed)
     if env.agent == 'ia2c':
         model = IA2C(env.n_s_ls, env.n_a_ls, env.n_w_ls, total_step,
-                     config['MODEL_CONFIG'], seed=seed)
+                     config['MODEL_CONFIG'], seed=seed, n_ev_ls=env.n_ev_ls)
     elif env.agent == 'ma2c':
         model = MA2C(env.n_s_ls, env.n_a_ls, env.n_w_ls, env.n_f_ls, total_step,
-                     config['MODEL_CONFIG'], seed=seed)
+                     config['MODEL_CONFIG'], seed=seed, n_ev_ls=env.n_ev_ls)
     elif env.agent == 'iqld':
         model = IQL(env.n_s_ls, env.n_a_ls, env.n_w_ls, total_step, config['MODEL_CONFIG'],
-                    seed=0, model_type='dqn')
+                    seed=0, model_type='dqn', n_ev_ls=env.n_ev_ls)
     else:
         model = IQL(env.n_s_ls, env.n_a_ls, env.n_w_ls, total_step, config['MODEL_CONFIG'],
-                    seed=0, model_type='lr')
+                    seed=0, model_type='lr', n_ev_ls=env.n_ev_ls)
 
     # disable multi-threading for safe SUMO implementation
     # threads = []
@@ -179,15 +190,17 @@ def evaluate_fn(agent_dir, output_dir, seeds, port, demo, policy_type):
         if agent == 'a2c':
             model = A2C(env.n_s, env.n_a, 0, config['MODEL_CONFIG'])
         elif agent == 'ia2c':
-            model = IA2C(env.n_s_ls, env.n_a_ls, env.n_w_ls, 0, config['MODEL_CONFIG'])
+            model = IA2C(env.n_s_ls, env.n_a_ls, env.n_w_ls, 0, config['MODEL_CONFIG'],
+                         n_ev_ls=env.n_ev_ls)
         elif agent == 'ma2c':
-            model = MA2C(env.n_s_ls, env.n_a_ls, env.n_w_ls, env.n_f_ls, 0, config['MODEL_CONFIG'])
+            model = MA2C(env.n_s_ls, env.n_a_ls, env.n_w_ls, env.n_f_ls, 0, config['MODEL_CONFIG'],
+                         n_ev_ls=env.n_ev_ls)
         elif agent == 'iqld':
             model = IQL(env.n_s_ls, env.n_a_ls, env.n_w_ls, 0, config['MODEL_CONFIG'],
-                        seed=0, model_type='dqn')
+                        seed=0, model_type='dqn', n_ev_ls=env.n_ev_ls)
         else:
             model = IQL(env.n_s_ls, env.n_a_ls, env.n_w_ls, 0, config['MODEL_CONFIG'],
-                        seed=0, model_type='lr')
+                        seed=0, model_type='lr', n_ev_ls=env.n_ev_ls)
         if not model.load(agent_dir + '/model/'):
             return
     else:

@@ -15,7 +15,7 @@ from real_net.data.build_file import gen_rou_file
 
 sns.set_color_codes()
 
-STATE_NAMES = ['wave']
+STATE_NAMES = ['wave', 'ev']
 # node: (phase key, neighbor list)
 NODES = {'10026': ('6.0', ['9431', '9561', 'cluster_9563_9597', '9531']),
          '8794': ('4.0', ['cluster_8985_9609', '9837', '9058', 'cluster_9563_9597']),
@@ -76,10 +76,11 @@ class RealNetPhase(PhaseMap):
 
 
 class RealNetController:
-    def __init__(self, node_names, nodes):
+    def __init__(self, node_names, nodes, env=None):
         self.name = 'greedy'
         self.node_names = node_names
         self.nodes = nodes
+        self.env = env
 
     def forward(self, obs):
         actions = []
@@ -88,6 +89,22 @@ class RealNetController:
         return actions
 
     def greedy(self, ob, node_name):
+        # Emergency vehicle priority override
+        if self.env is not None:
+            node = self.nodes[node_name]
+            phases = PHASES[NODES[node_name][0]]
+            for lane in node.lanes_in:
+                try:
+                    vehicle_ids = self.env.sim.lane.getLastStepVehicleIDs(lane)
+                    for vid in vehicle_ids:
+                        vtype = self.env.sim.vehicle.getTypeID(vid)
+                        if 'ambulance' in vtype.lower() or 'emergency' in vtype.lower():
+                            lane_idx = list(node.lanes_in).index(lane)
+                            for phase_action, phase_str in enumerate(phases):
+                                if lane_idx < len(phase_str) and phase_str[lane_idx] in 'Gg':
+                                    return phase_action
+                except Exception:
+                    pass
         # get the action space
         phases = PHASES[NODES[node_name][0]]
         flows = []
@@ -100,7 +117,6 @@ class RealNetController:
                 if signal == 'G':
                     # find controlled lane
                     lane = node.lanes_in[i]
-                    # ild = 'ild:' + lane
                     ild = lane
                     # if it has not been counted, add the wave
                     if ild not in visited_ilds:
@@ -108,7 +124,11 @@ class RealNetController:
                         wave += ob[j]
                         visited_ilds.add(ild)
             flows.append(wave)
-        return np.argmax(np.array(flows))
+        # tie-breaking: randomly choose among maximum-flow phases
+        flows = np.array(flows)
+        max_flow = np.max(flows)
+        max_indices = np.where(flows == max_flow)[0]
+        return int(np.random.choice(max_indices))
 
 
 class RealNetEnv(TrafficSimulator):

@@ -1,0 +1,25 @@
+<routes>
+  <vType id="car" length="5" accel="5" decel="10" maxSpeed="15" speedDev="0.1" color="1,0,0"/>
+  <vType id="ambulance" vClass="emergency" length="6" accel="7" decel="12" maxSpeed="30" speedFactor="2.0" color="1,0,0" guiShape="emergency" lcStrategic="1000" lcCooperative="0.0"/>
+  <flow id="f_0" departPos="random_free" from="A0A1" to="C1B1" begin="0" end="3600" vehsPerHour="300" type="car"/>
+  <flow id="f_1" departPos="random_free" from="C1C0" to="A0B0" begin="0" end="3600" vehsPerHour="300" type="car"/>
+  <flow id="f_2" departPos="random_free" from="A1A0" to="C1B1" begin="0" end="3600" vehsPerHour="300" type="car"/>
+  <flow id="f_3" departPos="random_free" from="A1B1" to="A0B0" begin="0" end="3600" vehsPerHour="300" type="car"/>
+  <flow id="f_4" departPos="random_free" from="C1B1" to="A0A1" begin="0" end="3600" vehsPerHour="300" type="car"/>
+  <flow id="f_5" departPos="random_free" from="A1A0" to="A1B1" begin="0" end="3600" vehsPerHour="300" type="car"/>
+  <flow id="f_6" departPos="random_free" from="C0B0" to="C0C1" begin="0" end="3600" vehsPerHour="300" type="car"/>
+  <flow id="f_7" departPos="random_free" from="C1B1" to="B1A1" begin="0" end="3600" vehsPerHour="300" type="car"/>
+  <flow id="f_8" departPos="random_free" from="B0B1" to="B1C1" begin="0" end="3600" vehsPerHour="300" type="car"/>
+  <flow id="f_9" departPos="random_free" from="C0B0" to="B0A0" begin="0" end="3600" vehsPerHour="300" type="car"/>
+  <flow id="f_10" departPos="random_free" from="C0B0" to="C1C0" begin="0" end="3600" vehsPerHour="300" type="car"/>
+  <flow id="f_11" departPos="random_free" from="A1B1" to="C1C0" begin="0" end="3600" vehsPerHour="300" type="car"/>
+  <vehicle id="ev_0" type="ambulance" depart="100.00"><route edges="B0C0 B0A0"/></vehicle>
+  <vehicle id="ev_1" type="ambulance" depart="400.00"><route edges="A0A1 B1C1"/></vehicle>
+  <vehicle id="ev_2" type="ambulance" depart="700.00"><route edges="B0B1 B0C0"/></vehicle>
+  <vehicle id="ev_3" type="ambulance" depart="1000.00"><route edges="C0B0 A0A1"/></vehicle>
+  <vehicle id="ev_4" type="ambulance" depart="1300.00"><route edges="B1A1 A1B1"/></vehicle>
+  <vehicle id="ev_5" type="ambulance" depart="1600.00"><route edges="C1B1 A0A1"/></vehicle>
+  <vehicle id="ev_6" type="ambulance" depart="1900.00"><route edges="B0A0 C0B0"/></vehicle>
+  <vehicle id="ev_7" type="ambulance" depart="2200.00"><route edges="B1C1 C0B0"/></vehicle>
+  <vehicle id="ev_8" type="ambulance" depart="2500.00"><route edges="B0C0 A0B0"/></vehicle>
+</routes>

@@ -13,6 +13,7 @@ simulation details are under section V.
 """
 import numpy as np
 import os
+import subprocess
 import xml.etree.cElementTree as ET
 
 # FLOW_MULTIPLIER = 0.8
@@ -181,7 +182,7 @@ def output_flows(flow, num_car_hourly):
               'nt4_nt3 nt3_nt2 nt2_np5']
     cases = [(3, 4, 5), (0, 3, 4), (1, 2, 5), (4, 5, 9), (5, 6, 9), (4, 7, 8)]
     str_flows = '<routes>\n'
-    str_flows += '  <vType id="type1" length="5" accel="5" decel="10"/>\n'
+    str_flows += '  <vType id="type1" length="5" accel="5" decel="10" color="1,0,0"/>\n'
 
     # flows vary every 10min, with dim 5x12, 5 source links are x1, x2, x3, x8, x9
     # flows = [[450, 475, 500, 600, 625, 650, 700, 650, 625, 600, 500, 400],
@@ -320,15 +321,60 @@ def gen_rou_file(seed=None, thread=None, path=None, num_car_hourly=0):
     if path is not None:
         files = [path + f for f in files]
     flags = ['-r', '-t', '-n', '-o']
-    command = 'jtrrouter'
+    command = ['jtrrouter']
     for a, b in zip(flags, files):
-        command += ' ' + a + ' ' + b
+        command += [a, b]
     if seed is not None:
-        command += ' --seed %d' % int(seed)
-    os.system(command)
+        command += ['--seed', str(int(seed))]
+    subprocess.run(command, check=True)
     # remove webpage loading
     tree = ET.ElementTree(file=files[-1])
-    tree.getroot().attrib = {}
+    root = tree.getroot()
+    root.attrib = {}
+    
+    # Add ambulance vType
+    ambulance_vtype = ET.Element('vType', id='ambulance', vClass='emergency', 
+                                  maxSpeed='50', accel='10', decel='10',
+                                  color='1,0,0', guiShape='emergency',
+                                  length='8.00', width='3.0', speedFactor='2.0',
+                                  lcStrategic='1000', lcCooperative='0.0',
+                                  lcSpeedGain='1000', lcKeepRight='0')
+    root.insert(1, ambulance_vtype)
+
+    # Add emergency vehicles
+    routes_ev = [
+        'np1_nt1 nt1_npc npc_nt5 nt5_np11',
+        'np2_nt1 nt1_nt6 nt6_np13',
+        'np3_nt1 nt1_nt2 nt2_np5',
+        'np8_nt4 nt4_nt3 nt3_nt2 nt2_np5',
+        'np9_nt4 nt4_nt5 nt5_nt6 nt6_np12'
+    ]
+    
+    for i in range(30):
+        depart_time = str(120.0 + i * 100.0)
+        ev = ET.Element('vehicle', id=f'ev_{i}', type='ambulance', depart=depart_time)
+        route_str = routes_ev[i % len(routes_ev)]
+        ET.SubElement(ev, 'route', edges=route_str)
+        root.append(ev)
+        
+    # Sort all vehicles by depart time to prevent SUMO from skipping!
+    # Elements that are not vehicles (e.g. vType) should be kept at the top
+    vtypes = [e for e in root if e.tag == 'vType']
+    vehicles = [e for e in root if e.tag == 'vehicle']
+    other_elements = [e for e in root if e.tag not in ['vType', 'vehicle']]
+    
+    vehicles.sort(key=lambda x: float(x.get('depart', 0)))
+    
+    # Reconstruct root
+    for elem in list(root):
+        root.remove(elem)
+    for elem in vtypes:
+        root.append(elem)
+    for elem in other_elements:
+        root.append(elem)
+    for elem in vehicles:
+        root.append(elem)
+
     tree.write(files[-1])
     sumocfg_file = path + ('exp_%d.sumocfg' % thread)
     write_file(sumocfg_file, output_config(thread=thread))
@@ -344,7 +390,11 @@ def output_config(thread=None):
     str_config += '    <net-file value="exp.net.xml"/>\n'
     str_config += '    <route-files value="%s"/>\n' % out_file
     str_config += '    <additional-files value="exp.add.xml"/>\n'
-    str_config += '  </input>\n  <time>\n'
+    str_config += '  </input>\n'
+    str_config += '  <processing>\n'
+    str_config += '    <ignore-route-errors value="true"/>\n'
+    str_config += '  </processing>\n'
+    str_config += '  <time>\n'
     str_config += '    <begin value="0"/>\n    <end value="7200"/>\n'
     str_config += '  </time>\n</configuration>\n'
     return str_config
@@ -434,7 +484,7 @@ def main():
     write_file('./exp.netccfg', output_netconfig())
 
     # generate net.xml file
-    os.system('netconvert -c exp.netccfg')
+    subprocess.run(['netconvert', '-c', 'exp.netccfg'], check=True)
 
     # raw.rou.xml file
     flow = '  <flow id="f_%s" from="%s" begin="%d" end="%d" vehsPerHour="%d" type="type1"/>\n'
@@ -444,7 +494,8 @@ def main():
     write_file('./exp.turns.xml', output_turns())
 
     # generate rou.xml file
-    os.system('jtrrouter -t exp.turns.xml -n exp.net.xml -r exp.raw.rou.xml -o exp.rou.xml')
+    subprocess.run(['jtrrouter', '-t', 'exp.turns.xml', '-n', 'exp.net.xml',
+                     '-r', 'exp.raw.rou.xml', '-o', 'exp.rou.xml'], check=True)
 
     # add.xml file
     ild = '  <laneAreaDetector file="ild.out" freq="1" id="%s_%d" lane="%s_%d" pos="-50" endPos="-1"/>\n'

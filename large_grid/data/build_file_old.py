@@ -225,7 +225,7 @@ def output_flows(num_ext_car_hourly, num_int_car_hourly, seed=None):
     ext_flow = '  <flow id="fe:%s" departPos="random_free" from="%s" to="%s" begin="%d" end="%d" vehsPerHour="%d" type="type1"/>\n'
     int_flow = '  <flow id="fi:%s" departPos="random_free" from="%s" to="%s" begin="%d" end="%d" probability="%.2f" type="type1"/>\n'
     str_flows = '<routes>\n'
-    str_flows += '  <vType id="type1" length="5" accel="5" decel="10"/>\n'
+    str_flows += '  <vType id="type1" length="5" accel="5" decel="10" color="1,0,0"/>\n'
     # create internal origins and destinations
     origs = []
     for i in [17, 19, 7, 9]:

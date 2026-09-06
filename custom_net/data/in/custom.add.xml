@@ -1,0 +1,14 @@
+<additional>
+  <laneAreaDetector file="ild.out" freq="1" id="B1B0_0" lane="B1B0_0" pos="-50.00" endPos="-0.1"/>
+  <laneAreaDetector file="ild.out" freq="1" id="B1B0_1" lane="B1B0_1" pos="-50.00" endPos="-0.1"/>
+  <laneAreaDetector file="ild.out" freq="1" id="C0B0_0" lane="C0B0_0" pos="-50.00" endPos="-0.1"/>
+  <laneAreaDetector file="ild.out" freq="1" id="C0B0_1" lane="C0B0_1" pos="-50.00" endPos="-0.1"/>
+  <laneAreaDetector file="ild.out" freq="1" id="A0B0_0" lane="A0B0_0" pos="-50.00" endPos="-0.1"/>
+  <laneAreaDetector file="ild.out" freq="1" id="A0B0_1" lane="A0B0_1" pos="-50.00" endPos="-0.1"/>
+  <laneAreaDetector file="ild.out" freq="1" id="C1B1_0" lane="C1B1_0" pos="-50.00" endPos="-0.1"/>
+  <laneAreaDetector file="ild.out" freq="1" id="C1B1_1" lane="C1B1_1" pos="-50.00" endPos="-0.1"/>
+  <laneAreaDetector file="ild.out" freq="1" id="B0B1_0" lane="B0B1_0" pos="-50.00" endPos="-0.1"/>
+  <laneAreaDetector file="ild.out" freq="1" id="B0B1_1" lane="B0B1_1" pos="-50.00" endPos="-0.1"/>
+  <laneAreaDetector file="ild.out" freq="1" id="A1B1_0" lane="A1B1_0" pos="-50.00" endPos="-0.1"/>
+  <laneAreaDetector file="ild.out" freq="1" id="A1B1_1" lane="A1B1_1" pos="-50.00" endPos="-0.1"/>
+</additional>

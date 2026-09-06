@@ -419,32 +419,32 @@
         <vehicles vehicleMode="0" vehicleQuality="0" vehicle_minSize="1.00" vehicle_exaggeration="1.00" vehicle_constantSize="0" showBlinker="1"
                   vehicleName_show="0" vehicleName_size="50.00" vehicleName_color="204,153,0">
             <colorScheme name="given vehicle/type/route color">
-                <entry color="yellow"/>
+                <entry color="red"/>
             </colorScheme>
             <colorScheme name="uniform">
-                <entry color="yellow"/>
+                <entry color="red"/>
             </colorScheme>
             <colorScheme name="given/assigned vehicle color">
-                <entry color="yellow"/>
+                <entry color="red"/>
             </colorScheme>
             <colorScheme name="given/assigned type color">
-                <entry color="yellow"/>
+                <entry color="red"/>
             </colorScheme>
             <colorScheme name="given/assigned route color">
-                <entry color="yellow"/>
+                <entry color="red"/>
             </colorScheme>
             <colorScheme name="depart position as HSV">
-                <entry color="yellow"/>
+                <entry color="red"/>
             </colorScheme>
             <colorScheme name="arrival position as HSV">
-                <entry color="yellow"/>
+                <entry color="red"/>
             </colorScheme>
             <colorScheme name="direction/distance as HSV">
-                <entry color="yellow"/>
+                <entry color="red"/>
             </colorScheme>
             <colorScheme name="by speed" interpolated="1">
                 <entry color="red" threshold="0.00"/>
-                <entry color="yellow" threshold="8.33"/>
+                <entry color="red" threshold="8.33"/>
                 <entry color="green" threshold="15.28"/>
                 <entry color="cyan" threshold="22.22"/>
                 <entry color="blue" threshold="33.33"/>
@@ -459,19 +459,19 @@
                 <entry color="blue" threshold="0.00"/>
                 <entry color="cyan" threshold="30.00"/>
                 <entry color="green" threshold="100.00"/>
-                <entry color="yellow" threshold="200.00"/>
+                <entry color="red" threshold="200.00"/>
                 <entry color="red" threshold="300.00"/>
             </colorScheme>
             <colorScheme name="by accumulated waiting time" interpolated="1">
                 <entry color="blue" threshold="0.00"/>
                 <entry color="cyan" threshold="25.00"/>
                 <entry color="green" threshold="50.00"/>
-                <entry color="yellow" threshold="75.00"/>
+                <entry color="red" threshold="75.00"/>
                 <entry color="red" threshold="100.00"/>
             </colorScheme>
             <colorScheme name="by time since lane change" interpolated="1">
                 <entry color="189,189,179" threshold="-180.00"/>
-                <entry color="yellow" threshold="-20.00"/>
+                <entry color="red" threshold="-20.00"/>
                 <entry color="red" threshold="-0.00"/>
                 <entry color="179,179,179" threshold="0.00"/>
                 <entry color="blue" threshold="0.00"/>
@@ -480,7 +480,7 @@
             </colorScheme>
             <colorScheme name="by max speed" interpolated="1">
                 <entry color="red" threshold="0.00"/>
-                <entry color="yellow" threshold="8.33"/>
+                <entry color="red" threshold="8.33"/>
                 <entry color="green" threshold="15.28"/>
                 <entry color="cyan" threshold="22.22"/>
                 <entry color="blue" threshold="33.33"/>
@@ -516,7 +516,7 @@
             </colorScheme>
             <colorScheme name="by reroute number" interpolated="1">
                 <entry color="red" threshold="0.00"/>
-                <entry color="yellow" threshold="1.00"/>
+                <entry color="red" threshold="1.00"/>
                 <entry color="white" threshold="10.00"/>
             </colorScheme>
             <colorScheme name="by selection">
@@ -525,7 +525,7 @@
             </colorScheme>
             <colorScheme name="by offset from best lane" interpolated="1">
                 <entry color="red" threshold="-3.00"/>
-                <entry color="yellow" threshold="-1.00"/>
+                <entry color="red" threshold="-1.00"/>
                 <entry color="179,179,179" threshold="0.00"/>
                 <entry color="cyan" threshold="1.00"/>
                 <entry color="blue" threshold="3.00"/>
@@ -533,7 +533,7 @@
             <colorScheme name="by acceleration" interpolated="1">
                 <entry color="64,0,0" threshold="-9.00"/>
                 <entry color="red" threshold="-4.50"/>
-                <entry color="yellow" threshold="-0.10"/>
+                <entry color="red" threshold="-0.10"/>
                 <entry color="179,179,179" threshold="0.00"/>
                 <entry color="cyan" threshold="0.10"/>
                 <entry color="blue" threshold="2.60"/>
@@ -541,7 +541,7 @@
             </colorScheme>
             <colorScheme name="by time gap on lane" interpolated="1">
                 <entry color="179,179,179" threshold="-1.00"/>
-                <entry color="yellow" threshold="0.00"/>
+                <entry color="red" threshold="0.00"/>
                 <entry color="cyan" threshold="1.00"/>
                 <entry color="blue" threshold="2.00"/>
             </colorScheme>
@@ -549,7 +549,7 @@
                 <entry color="blue" threshold="0.00"/>
                 <entry color="cyan" threshold="30.00"/>
                 <entry color="green" threshold="100.00"/>
-                <entry color="yellow" threshold="200.00"/>
+                <entry color="red" threshold="200.00"/>
                 <entry color="red" threshold="300.00"/>
             </colorScheme>
             <colorScheme name="by electricity consumption" interpolated="1">
@@ -560,11 +560,11 @@
                 <entry color="blue" threshold="0.00"/>
                 <entry color="cyan" threshold="10.00"/>
                 <entry color="green" threshold="60.00"/>
-                <entry color="yellow" threshold="180.00"/>
+                <entry color="red" threshold="180.00"/>
                 <entry color="red" threshold="900.00"/>
             </colorScheme>
             <colorScheme name="random">
-                <entry color="yellow"/>
+                <entry color="red"/>
             </colorScheme>
         </vehicles>
         <persons personMode="0" personQuality="0" person_minSize="1.00" person_exaggeration="1.00" person_constantSize="0"

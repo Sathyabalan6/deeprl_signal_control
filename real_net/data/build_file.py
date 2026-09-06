@@ -3,8 +3,6 @@ import logging
 import numpy as np
 import os
 
-# from envs.real_net_env import RealNetEnv
-
 ILD_POS = 50
 
 def write_file(path, content):
@@ -75,7 +73,8 @@ def output_flows(flow_rate, seed=None):
 
     flow_str = '  <flow id="f_%s" departPos="random_free" from="%s" to="%s" via="%s" begin="%d" end="%d" vehsPerHour="%d" type="car"/>\n'
     output = '<routes>\n'
-    output += '  <vType id="car" length="5" accel="5" decel="10" speedDev="0.1"/>\n'
+    output += '  <vType id="car" length="5" accel="5" decel="10" speedDev="0.1" color="1,0,0"/>\n'
+    output += '  <vType id="ambulance" vClass="emergency" length="6" accel="7" decel="12" maxSpeed="50" speedFactor="2.0" color="1,0,0" guiShape="emergency" lcStrategic="1000" lcCooperative="0.0"/>\n'
 
     for i in range(len(times) - 1):
         name = str(i)
@@ -126,6 +125,21 @@ def gen_rou_file(path, flow_rate, seed=None, thread=None):
     else:
         flow_file = 'most_%d.rou.xml' % int(thread)
     write_file(path + 'in/' + flow_file, output_flows(flow_rate, seed=seed))
+    # inject ambulances into the route file
+    import xml.etree.cElementTree as ET
+    rou_path = path + 'in/' + flow_file
+    tree = ET.ElementTree(file=rou_path)
+    root = tree.getroot()
+    ambulances = [
+        ('ev_0', '0.00',  '-10114#1 -10114#0 10108#0 gneE5'),
+        ('ev_1', '5.00',  '10096#1 10089#3 10091'),
+        ('ev_2', '10.00', '10052#1 10181#1 -10089#3'),
+    ]
+    for ev_id, depart, edges in ambulances:
+        ev = ET.Element('vehicle', id=ev_id, type='ambulance', depart=depart)
+        ET.SubElement(ev, 'route', edges=edges)
+        root.append(ev)
+    tree.write(rou_path)
     sumocfg_file = path + ('most_%d.sumocfg' % thread)
     write_file(sumocfg_file, output_config(thread=thread))
     return sumocfg_file
@@ -155,13 +169,11 @@ def output_ild(env, ild):
 if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s [%(levelname)s] %(message)s',
                         level=logging.INFO)
-    config = configparser.ConfigParser()
-    config.read('./config/config_test_real.ini')
-    base_dir = './output_result/'
-    if not os.path.exists(base_dir):
-        os.mkdir(base_dir)
-    env = RealNetEnv(config['ENV_CONFIG'], 2, base_dir, is_record=True, record_stat=True)
-    # add.xml file
-    ild = '  <laneAreaDetector file="ild.out" freq="1" id="%s" lane="%s" pos="%d" endPos="%d"/>\n'
-    write_file('./real_net/data/in/most.add.xml', output_ild(env, ild))
-    env.terminate()
+    # Note: This script generates route files but requires manual setup for add.xml
+    # The add.xml file should already exist in ./real_net/data/in/ directory
+    # If you need to regenerate it, run this from the main project directory after training setup
+    logging.info('Build file for real_net: Route generation only')
+    logging.info('Ensure most.add.xml exists in ./real_net/data/in/ directory')
+    
+    # Generate a sample route file
+    gen_rou_file('', flow_rate=360, seed=0, thread=0)

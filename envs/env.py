@@ -3,6 +3,7 @@ Traffic network simulator w/ defined sumo files
 @author: Tianshu Chu
 """
 import logging
+import os
 import numpy as np
 import pandas as pd
 import subprocess
@@ -11,7 +12,7 @@ import time
 import traci
 import xml.etree.cElementTree as ET
 
-DEFAULT_PORT = 8000
+DEFAULT_PORT = 9000
 SEC_IN_MS = 1000
 
 # hard code real-net reward norm
@@ -61,22 +62,22 @@ class PhaseMap:
 
 
 class Node:
-    def __init__(self, name, neighbor=[], control=False):
-        self.control = control # disabled
-        # self.edges_in = []  # for reward
+    def __init__(self, name, neighbor=None, control=False):
+        self.control = control
         self.lanes_in = []
-        self.ilds_in = [] # for state
-        self.fingerprint = [] # local policy
+        self.ilds_in = []
+        self.fingerprint = []
         self.name = name
-        self.neighbor = neighbor
-        self.num_state = 0 # wave and wait should have the same dim
+        self.neighbor = neighbor if neighbor is not None else []
+        self.num_state = 0
         self.num_fingerprint = 0
-        self.wave_state = [] # local state
-        self.wait_state = [] # local state
-        # self.waits = [] 
+        self.wave_state = []
+        self.wait_state = []
         self.phase_id = -1
         self.n_a = 0
         self.prev_action = -1
+        self.ev_state = []
+        self.ev_distance = []
 
 
 class TrafficSimulator:
@@ -99,15 +100,23 @@ class TrafficSimulator:
         self.clips = {'wave': config.getfloat('clip_wave'),
                       'wait': config.getfloat('clip_wait')}
         self.coef_wait = config.getfloat('coef_wait')
+        self.coef_ev = config.getfloat('coef_ev', fallback=5.0)
         self.train_mode = True
+        self._sumo_proc = None
         test_seeds = config.get('test_seeds').split(',')
         test_seeds = [int(s) for s in test_seeds]
         self._init_map()
         self.init_data(is_record, record_stats, output_path)
         self.init_test_seeds(test_seeds)
+        # Use a temporary high port for the init probe to avoid
+        # TIME_WAIT conflict with the training port
+        self._probe_port = self.port + 100
+        _orig_port = self.port
+        self.port = self._probe_port
         self._init_sim(self.seed)
         self._init_nodes()
         self.terminate()
+        self.port = _orig_port
 
     def _debug_traffic_step(self):
         for node_name in self.node_names:
@@ -173,25 +182,39 @@ class TrafficSimulator:
             if self.agent == 'greedy':
                 state.append(node.wave_state)
             elif self.agent == 'a2c':
+                cur_state = [node.wave_state]
                 if 'wait' in self.state_names:
-                    state.append(np.concatenate([node.wave_state, node.wait_state]))
-                else:
-                    state.append(node.wave_state)
+                    cur_state.append(node.wait_state)
+                if 'ev' in self.state_names:
+                    cur_state.extend([node.ev_state, node.ev_distance])
+                state.append(np.concatenate(cur_state))
             else:
                 cur_state = [node.wave_state]
                 # include wave states of neighbors
                 for nnode_name in node.neighbor:
+                    if nnode_name not in self.nodes:
+                        continue
                     if self.agent != 'ma2c':
                         cur_state.append(self.nodes[nnode_name].wave_state)
                     else:
-                        # discount the neigboring states
                         cur_state.append(self.nodes[nnode_name].wave_state * self.coop_gamma)
                 # include wait state
                 if 'wait' in self.state_names:
                     cur_state.append(node.wait_state)
+                # include EV states (local + neighbor for MA2C)
+                if 'ev' in self.state_names:
+                    cur_state.extend([node.ev_state, node.ev_distance])
+                    if self.agent == 'ma2c':
+                        for nnode_name in node.neighbor:
+                            if nnode_name not in self.nodes:
+                                continue
+                            nnode = self.nodes[nnode_name]
+                            cur_state.extend([nnode.ev_state, nnode.ev_distance])
                 # include fingerprints of neighbors
                 if self.agent == 'ma2c':
                     for nnode_name in node.neighbor:
+                        if nnode_name not in self.nodes:
+                            continue
                         cur_state.append(self.nodes[nnode_name].fingerprint)
                 state.append(np.concatenate(cur_state))
 
@@ -223,10 +246,17 @@ class TrafficSimulator:
             # edges_in = []
             ilds_in = []
             for lane_name in lanes_in:
-                ild_name = lane_name
-                if ild_name not in ilds_in:
-                    ilds_in.append(ild_name)
-            # nodes[node_name].edges_in = edges_in
+                if lane_name in ilds_in:
+                    continue
+                # skip lanes too short to place a detector or fit a vehicle
+                try:
+                    if self.sim.lane.getLength(lane_name) < 1.0:
+                        logging.warning('Skipping short lane %s (%.2fm)' %
+                                        (lane_name, self.sim.lane.getLength(lane_name)))
+                        continue
+                except Exception:
+                    pass
+                ilds_in.append(lane_name)
             nodes[node_name].ilds_in = ilds_in
         self.nodes = nodes
         self.node_names = sorted(list(nodes.keys()))
@@ -284,14 +314,21 @@ class TrafficSimulator:
             command += ['--time-to-teleport', '300']
         command += ['--no-warnings', 'True']
         command += ['--duration-log.disable', 'True']
+        command += ['--ignore-route-errors', 'True']
         # collect trip info if necessary
         if self.is_record:
             command += ['--tripinfo-output',
                         self.output_path + ('%s_%s_trip.xml' % (self.name, self.agent))]
-        subprocess.Popen(command)
-        # wait 2s to establish the traci server
-        time.sleep(2)
-        self.sim = traci.connect(port=self.port)
+        self._sumo_proc = subprocess.Popen(command)
+        # wait for traci server — retry with backoff
+        for attempt in range(15):
+            time.sleep(2)
+            try:
+                self.sim = traci.connect(port=self.port)
+                return
+            except Exception as e:
+                logging.warning('TraCI connect attempt %d/15 on port %d: %s' % (attempt + 1, self.port, e))
+        raise RuntimeError('Could not connect to SUMO on port %d' % self.port)
 
     def _init_sim_config(self):
         # needs to be overwriteen
@@ -305,21 +342,29 @@ class TrafficSimulator:
         self.n_s_ls = []
         self.n_w_ls = []
         self.n_f_ls = []
+        self.n_ev_ls = []
         for node_name in self.node_names:
             node = self.nodes[node_name]
             num_wave = node.num_state
             num_fingerprint = 0
+            num_ev_neighbors = 0
             for nnode_name in node.neighbor:
+                if nnode_name not in self.nodes:
+                    continue
                 if self.agent not in ['a2c', 'greedy']:
-                    # all marl agents have neighborhood communication
                     num_wave += self.nodes[nnode_name].num_state
                 if self.agent == 'ma2c':
-                    # only ma2c uses neighbor's policy
                     num_fingerprint += self.nodes[nnode_name].num_fingerprint
+                    if 'ev' in self.state_names:
+                        # neighbor EV: presence + distance per lane
+                        num_ev_neighbors += self.nodes[nnode_name].num_state * 2
             num_wait = 0 if 'wait' not in self.state_names else node.num_state
-            self.n_s_ls.append(num_wave + num_wait + num_fingerprint)
+            # local EV: presence + distance per lane
+            num_ev = (node.num_state * 2 + num_ev_neighbors) if 'ev' in self.state_names else 0
+            self.n_s_ls.append(num_wave + num_wait + num_ev + num_fingerprint)
             self.n_f_ls.append(num_fingerprint)
             self.n_w_ls.append(num_wait)
+            self.n_ev_ls.append(num_ev)
         self.n_s = np.sum(np.array(self.n_s_ls))
 
     def _measure_reward_step(self):
@@ -329,7 +374,7 @@ class TrafficSimulator:
             waits = []
             for ild in self.nodes[node_name].ilds_in:
                 if self.obj in ['queue', 'hybrid']:
-                    if self.name == 'real_net':
+                    if self.name in ('real_net', 'custom_net'):
                         cur_queue = min(10, self.sim.lane.getLastStepHaltingNumber(ild))
                     else:
                         cur_queue = self.sim.lanearea.getLastStepHaltingNumber(ild)
@@ -337,7 +382,7 @@ class TrafficSimulator:
                 if self.obj in ['wait', 'hybrid']:
                     max_pos = 0
                     car_wait = 0
-                    if self.name == 'real_net':
+                    if self.name in ('real_net', 'custom_net'):
                         cur_cars = self.sim.lane.getLastStepVehicleIDs(ild)
                     else:
                         cur_cars = self.sim.lanearea.getLastStepVehicleIDs(ild)
@@ -347,22 +392,31 @@ class TrafficSimulator:
                             max_pos = car_pos
                             car_wait = self.sim.vehicle.getWaitingTime(vid)
                     waits.append(car_wait)
-                # if self.name == 'real_net':
-                #     lane_name = ild.split(':')[1]
-                # else:
-                #     lane_name = 'e:' + ild.split(':')[1]
-                # queues.append(self.sim.lane.getLastStepHaltingNumber(lane_name))
 
             queue = np.sum(np.array(queues)) if len(queues) else 0
             wait = np.sum(np.array(waits)) if len(waits) else 0
-            # if self.obj in ['wait', 'hybrid']:
-            #     wait = np.sum(self.nodes[node_name].waits * (queues > 0))
+
+            # Emergency vehicle penalty
+            ev_penalty = 0.0
+            for ild in self.nodes[node_name].ilds_in:
+                try:
+                    if self.name in ('real_net', 'custom_net'):
+                        vehicle_ids = self.sim.lane.getLastStepVehicleIDs(ild)
+                    else:
+                        vehicle_ids = self.sim.lanearea.getLastStepVehicleIDs(ild)
+                    for vid in vehicle_ids:
+                        vtype = self.sim.vehicle.getTypeID(vid)
+                        if 'emergency' in vtype.lower() or 'ambulance' in vtype.lower():
+                            ev_penalty += self.sim.vehicle.getWaitingTime(vid) * self.coef_ev
+                except Exception:
+                    pass
+            
             if self.obj == 'queue':
-                reward = - queue
+                reward = - queue - ev_penalty
             elif self.obj == 'wait':
-                reward = - wait
+                reward = - wait - ev_penalty
             else:
-                reward = - queue - self.coef_wait * wait
+                reward = - queue - self.coef_wait * wait - ev_penalty
             rewards.append(reward)
         return np.array(rewards)
 
@@ -370,10 +424,12 @@ class TrafficSimulator:
         for node_name in self.node_names:
             node = self.nodes[node_name]
             for state_name in self.state_names:
+                if state_name == 'ev':
+                    continue
                 if state_name == 'wave':
                     cur_state = []
                     for ild in node.ilds_in:
-                        if self.name == 'real_net':
+                        if self.name in ('real_net', 'custom_net'):
                             cur_wave = self.sim.lane.getLastStepVehicleNumber(ild)
                         else:
                             cur_wave = self.sim.lanearea.getLastStepVehicleNumber(ild)
@@ -384,15 +440,18 @@ class TrafficSimulator:
                     for ild in node.ilds_in:
                         max_pos = 0
                         car_wait = 0
-                        if self.name == 'real_net':
+                        if self.name in ('real_net', 'custom_net'):
                             cur_cars = self.sim.lane.getLastStepVehicleIDs(ild)
                         else:
                             cur_cars = self.sim.lanearea.getLastStepVehicleIDs(ild)
                         for vid in cur_cars:
-                            car_pos = self.sim.vehicle.getLanePosition(vid)
-                            if car_pos > max_pos:
-                                max_pos = car_pos
-                                car_wait = self.sim.vehicle.getWaitingTime(vid)
+                            try:
+                                car_pos = self.sim.vehicle.getLanePosition(vid)
+                                if car_pos > max_pos:
+                                    max_pos = car_pos
+                                    car_wait = self.sim.vehicle.getWaitingTime(vid)
+                            except Exception:
+                                pass
                         cur_state.append(car_wait)
                     cur_state = np.array(cur_state)
                 if self.record_stats:
@@ -403,8 +462,38 @@ class TrafficSimulator:
                                                        self.clips[state_name])
                 if state_name == 'wave':
                     node.wave_state = norm_cur_state
-                else:
+                elif state_name == 'wait':
                     node.wait_state = norm_cur_state
+            
+            # EV state detection (only when 'ev' is in state_names)
+            if 'ev' in self.state_names:
+                ev_state = []
+                ev_distance = []
+                for ild in node.ilds_in:
+                    ev_present = 0
+                    ev_dist = 1.0
+                    if self.name in ('real_net', 'custom_net'):
+                        vehicle_ids = self.sim.lane.getLastStepVehicleIDs(ild)
+                    else:
+                        vehicle_ids = self.sim.lanearea.getLastStepVehicleIDs(ild)
+                    for vid in vehicle_ids:
+                            try:
+                                vtype = self.sim.vehicle.getTypeID(vid)
+                                if 'emergency' in vtype.lower() or 'ambulance' in vtype.lower():
+                                    ev_present = 1
+                                    raw_dist = self.sim.vehicle.getLanePosition(vid)
+                                    if self.name in ('real_net', 'custom_net'):
+                                        lane_len = self.sim.lane.getLength(ild)
+                                    else:
+                                        lane_len = self.sim.lane.getLength(self.sim.lanearea.getLaneID(ild))
+                                    ev_dist = max(0.0, 1.0 - (raw_dist / lane_len))
+                                    break
+                            except Exception:
+                                pass
+                    ev_state.append(ev_present)
+                    ev_distance.append(ev_dist)
+                node.ev_state = np.array(ev_state, dtype=np.float32)
+                node.ev_distance = np.array(ev_distance, dtype=np.float32)
 
     def _measure_traffic_step(self):
         cars = self.sim.vehicle.getIDList()
@@ -412,8 +501,16 @@ class TrafficSimulator:
         num_in_car = self.sim.simulation.getDepartedNumber()
         num_out_car = self.sim.simulation.getArrivedNumber()
         if num_tot_car > 0:
-            avg_waiting_time = np.mean([self.sim.vehicle.getWaitingTime(car) for car in cars])
-            avg_speed = np.mean([self.sim.vehicle.getSpeed(car) for car in cars])
+            waiting_times = []
+            speeds = []
+            for car in cars:
+                try:
+                    waiting_times.append(self.sim.vehicle.getWaitingTime(car))
+                    speeds.append(self.sim.vehicle.getSpeed(car))
+                except Exception:
+                    pass
+            avg_waiting_time = np.mean(waiting_times) if waiting_times else 0
+            avg_speed = np.mean(speeds) if speeds else 0
         else:
             avg_speed = 0
             avg_waiting_time = 0
@@ -425,6 +522,18 @@ class TrafficSimulator:
                 queues.append(self.sim.lane.getLastStepHaltingNumber(ild))
         avg_queue = np.mean(np.array(queues))
         std_queue = np.std(np.array(queues))
+        # EV metrics
+        ev_waiting = []
+        ev_count = 0
+        for car in cars:
+            try:
+                vtype = self.sim.vehicle.getTypeID(car)
+                if 'emergency' in vtype.lower() or 'ambulance' in vtype.lower():
+                    ev_count += 1
+                    ev_waiting.append(self.sim.vehicle.getWaitingTime(car))
+            except Exception:
+                pass
+        avg_ev_wait = np.mean(ev_waiting) if ev_waiting else 0
         cur_traffic = {'episode': self.cur_episode,
                        'time_sec': self.cur_sec,
                        'number_total_car': num_tot_car,
@@ -433,7 +542,9 @@ class TrafficSimulator:
                        'avg_wait_sec': avg_waiting_time,
                        'avg_speed_mps': avg_speed,
                        'std_queue': std_queue,
-                       'avg_queue': avg_queue}
+                       'avg_queue': avg_queue,
+                       'ev_count': ev_count,
+                       'avg_ev_wait_sec': avg_ev_wait}
         self.traffic_data.append(cur_traffic)
 
     @staticmethod
@@ -498,21 +609,28 @@ class TrafficSimulator:
     def collect_tripinfo(self):
         # read trip xml, has to be called externally to get complete file
         trip_file = self.output_path + ('%s_%s_trip.xml' % (self.name, self.agent))
-        tree = ET.ElementTree(file=trip_file)
-        for child in tree.getroot():
-            cur_trip = child.attrib
-            cur_dict = {}
-            cur_dict['episode'] = self.cur_episode
-            cur_dict['id'] = cur_trip['id']
-            cur_dict['depart_sec'] = cur_trip['depart']
-            cur_dict['arrival_sec'] = cur_trip['arrival']
-            cur_dict['duration_sec'] = cur_trip['duration']
-            cur_dict['wait_step'] = cur_trip['waitingCount']
-            cur_dict['wait_sec'] = cur_trip['waitingTime']
-            self.trip_data.append(cur_dict)
-        # delete the current xml
-        cmd = 'rm ' + trip_file
-        subprocess.check_call(cmd, shell=True)
+        try:
+            tree = ET.ElementTree(file=trip_file)
+            for child in tree.getroot():
+                cur_trip = child.attrib
+                if 'id' not in cur_trip or 'depart' not in cur_trip:
+                    continue
+                cur_dict = {}
+                cur_dict['episode'] = self.cur_episode
+                cur_dict['id'] = cur_trip['id']
+                cur_dict['is_ev'] = 1 if str(cur_trip['id']).startswith('ev_') else 0
+                cur_dict['depart_sec'] = cur_trip['depart']
+                cur_dict['arrival_sec'] = cur_trip.get('arrival', '')
+                cur_dict['duration_sec'] = cur_trip.get('duration', '')
+                cur_dict['wait_step'] = cur_trip.get('waitingCount', '')
+                cur_dict['wait_sec'] = cur_trip.get('waitingTime', '')
+                self.trip_data.append(cur_dict)
+        except ET.ParseError as e:
+            logging.warning('Env: trip XML parse error: %s' % str(e))
+        except Exception as e:
+            logging.warning('Env: trip collection error: %s' % str(e))
+        if os.path.exists(trip_file):
+            os.remove(trip_file)
 
     def init_data(self, is_record, record_stats, output_path):
         self.is_record = is_record
@@ -525,7 +643,8 @@ class TrafficSimulator:
         if self.record_stats:
             self.state_stat = {}
             for state_name in self.state_names:
-                self.state_stat[state_name] = []
+                if state_name != 'ev':
+                    self.state_stat[state_name] = []
 
     def init_test_seeds(self, test_seeds):
         self.test_num = len(test_seeds)
@@ -562,6 +681,14 @@ class TrafficSimulator:
 
     def terminate(self):
         self.sim.close()
+        try:
+            if self._sumo_proc is not None:
+                self._sumo_proc.kill()
+                self._sumo_proc.wait(timeout=5)
+                self._sumo_proc = None
+        except Exception:
+            pass
+        time.sleep(2)
 
     def step(self, action):
         if self.agent == 'a2c':
@@ -605,6 +732,9 @@ class TrafficSimulator:
             for node_name, r in zip(self.node_names, reward):
                 cur_reward = r
                 for nnode_name in self.nodes[node_name].neighbor:
+                    # Skip neighbors that are not controlled nodes
+                    if nnode_name not in self.nodes:
+                        continue
                     i = self.node_names.index(nnode_name)
                     cur_reward += self.coop_gamma * reward[i]
                 # for i, nnode in enumerate(self.node_names):

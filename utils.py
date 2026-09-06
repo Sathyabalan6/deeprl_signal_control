@@ -1,7 +1,8 @@
 import itertools
 import logging
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 import time
 import os
 import pandas as pd
@@ -15,8 +16,10 @@ def check_dir(cur_dir):
 
 
 def copy_file(src_dir, tar_dir):
-    cmd = 'cp %s %s' % (src_dir, tar_dir)
-    subprocess.check_call(cmd, shell=True)
+    import shutil
+    import os
+    if os.path.exists(src_dir):
+        shutil.copy(src_dir, tar_dir)
 
 
 def find_file(cur_dir, suffix='.ini'):
@@ -29,12 +32,12 @@ def find_file(cur_dir, suffix='.ini'):
 
 def init_dir(base_dir, pathes=['log', 'data', 'model']):
     if not os.path.exists(base_dir):
-        os.mkdir(base_dir)
+        os.makedirs(base_dir)
     dirs = {}
     for path in pathes:
         cur_dir = base_dir + '/%s/' % path
         if not os.path.exists(cur_dir):
-            os.mkdir(cur_dir)
+            os.makedirs(cur_dir)
         dirs[path] = cur_dir
     return dirs
 
@@ -310,7 +313,7 @@ class Trainer():
 
 class Tester(Trainer):
     def __init__(self, env, model, global_counter, summary_writer, output_path):
-        super().__init__(env, model, global_counter, summary_writer)
+        super().__init__(env, model, global_counter, summary_writer, run_test=False, output_path=output_path)
         self.env.train_mode = False
         self.test_num = self.env.test_num
         self.output_path = output_path
@@ -321,12 +324,13 @@ class Tester(Trainer):
         self.reward = tf.placeholder(tf.float32, [])
         self.summary = tf.summary.scalar('test_reward', self.reward)
 
-    def run_offline(self):
+    def run_offline(self, output_path=None):
         # enable traffic measurments for offline test
         is_record = True
         record_stats = False
         self.env.cur_episode = 0
-        self.env.init_data(is_record, record_stats, self.output_path)
+        out = output_path if output_path is not None else self.output_path
+        self.env.init_data(is_record, record_stats, out)
         rewards = []
         for test_ind in range(self.test_num):
             rewards.append(self.perform(test_ind))

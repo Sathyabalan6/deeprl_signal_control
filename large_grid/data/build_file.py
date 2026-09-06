@@ -10,6 +10,7 @@ regional reinforcement learning." American Control Conference (ACC), 2016. IEEE,
 """
 import numpy as np
 import os
+import subprocess
 
 MAX_CAR_NUM = 30
 SPEED_LIMIT_ST = 20
@@ -276,7 +277,8 @@ def output_flows(peak_flow1, peak_flow2, density, seed=None):
         np.random.seed(seed)
     ext_flow = '  <flow id="f_%s" departPos="random_free" from="%s" to="%s" begin="%d" end="%d" vehsPerHour="%d" type="type1"/>\n'
     str_flows = '<routes>\n'
-    str_flows += '  <vType id="type1" length="5" accel="5" decel="10"/>\n'
+    str_flows += '  <vType id="type1" length="5" accel="5" decel="10" color="1,0,0"/>\n'
+    str_flows += '  <vType id="ambulance" vClass="emergency" length="6" accel="7" decel="12" maxSpeed="50" speedFactor="2.0" color="1,0,0" guiShape="emergency" lcStrategic="1000" lcCooperative="0.0"/>\n'
     # initial traffic dist
     if density > 0:
         str_flows += init_routes(density)
@@ -332,6 +334,21 @@ def gen_rou_file(path, peak_flow1, peak_flow2, density, seed=None, thread=None):
     else:
         flow_file = 'exp_%d.rou.xml' % int(thread)
     write_file(path + flow_file, output_flows(peak_flow1, peak_flow2, density, seed=seed))
+    # inject ambulances traversing the grid diagonally
+    import xml.etree.cElementTree as ET
+    rou_path = path + flow_file
+    tree = ET.ElementTree(file=rou_path)
+    root = tree.getroot()
+    ambulances = [
+        ('ev_0', '0.00',  'np1_nt1 nt1_nt2 nt2_nt3 nt3_nt4 nt4_nt5 nt5_np10'),
+        ('ev_1', '5.00',  'np11_nt21 nt21_nt22 nt22_nt23 nt23_nt24 nt24_nt25 nt25_np20'),
+        ('ev_2', '10.00', 'np15_nt5 nt5_nt10 nt10_nt15 nt15_nt20 nt20_nt25 nt25_np20'),
+    ]
+    for ev_id, depart, edges in ambulances:
+        ev = ET.Element('vehicle', id=ev_id, type='ambulance', depart=depart)
+        ET.SubElement(ev, 'route', edges=edges)
+        root.append(ev)
+    tree.write(rou_path)
     sumocfg_file = path + ('exp_%d.sumocfg' % thread)
     write_file(sumocfg_file, output_config(thread=thread))
     return sumocfg_file
@@ -433,7 +450,7 @@ def main():
     write_file('./exp.netccfg', output_netconfig())
 
     # generate net.xml file
-    os.system('netconvert -c exp.netccfg')
+    subprocess.run(['netconvert', '-c', 'exp.netccfg'], check=True)
 
     # raw.rou.xml file
     write_file('./exp.rou.xml', output_flows(1000, 2000, 0.2))

@@ -9,7 +9,11 @@ from agents.policies import *
 import logging
 import multiprocessing as mp
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['TF_DETERMINISTIC_OPS'] = '1'
+os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
+tf.disable_v2_behavior()
 
 
 class A2C:
@@ -26,7 +30,10 @@ class A2C:
         # init tf
         tf.reset_default_graph()
         tf.set_random_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
         config = tf.ConfigProto(allow_soft_placement=True)
+        config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.OFF
         self.sess = tf.Session(config=config)
         self.policy = self._init_policy(n_s, n_a, n_f, model_config)
         self.saver = tf.train.Saver(max_to_keep=5)
@@ -37,17 +44,18 @@ class A2C:
             self._init_train(model_config)
         self.sess.run(tf.global_variables_initializer())
 
-    def _init_policy(self, n_s, n_a, n_w, n_f, model_config, agent_name=None):
+    def _init_policy(self, n_s, n_a, n_w, n_f, model_config, agent_name=None, n_ev=0):
         n_fw = model_config.getint('num_fw')
         n_ft = model_config.getint('num_ft')
         n_lstm = model_config.getint('num_lstm')
         if self.name == 'ma2c':
             n_fp = model_config.getint('num_fp')
             policy = FPLstmACPolicy(n_s, n_a, n_w, n_f, self.n_step, n_fc_wave=n_fw,
-                                    n_fc_wait=n_ft, n_fc_fp=n_fp, n_lstm=n_lstm, name=agent_name)
+                                    n_fc_wait=n_ft, n_fc_fp=n_fp, n_lstm=n_lstm,
+                                    name=agent_name, n_ev=n_ev)
         else:
             policy = LstmACPolicy(n_s, n_a, n_w, self.n_step, n_fc_wave=n_fw,
-                                  n_fc_wait=n_ft, n_lstm=n_lstm, name=agent_name)
+                                  n_fc_wait=n_ft, n_lstm=n_lstm, name=agent_name, n_ev=n_ev)
         return policy
 
     def _init_scheduler(self, model_config):
@@ -131,7 +139,7 @@ class A2C:
 
 class IA2C(A2C):
     def __init__(self, n_s_ls, n_a_ls, n_w_ls, total_step,
-                 model_config, seed=0):
+                 model_config, seed=0, n_ev_ls=None):
         self.name = 'ia2c'
         self.agents = []
         self.n_agent = len(n_s_ls)
@@ -140,17 +148,20 @@ class IA2C(A2C):
         self.n_s_ls = n_s_ls
         self.n_a_ls = n_a_ls
         self.n_w_ls = n_w_ls
+        self.n_ev_ls = n_ev_ls if n_ev_ls is not None else [0] * len(n_s_ls)
         self.n_step = model_config.getint('batch_size')
         # init tf
         tf.reset_default_graph()
         tf.set_random_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
         config = tf.ConfigProto(allow_soft_placement=True)
+        config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.OFF
         self.sess = tf.Session(config=config)
         self.policy_ls = []
-        for i, (n_s, n_w, n_a) in enumerate(zip(self.n_s_ls, self.n_w_ls, self.n_a_ls)):
-            # agent_name is needed to differentiate multi-agents
-            self.policy_ls.append(self._init_policy(n_s - n_w, n_a, n_w, 0, model_config,
-                                  agent_name='{:d}a'.format(i)))
+        for i, (n_s, n_w, n_a, n_ev) in enumerate(zip(self.n_s_ls, self.n_w_ls, self.n_a_ls, self.n_ev_ls)):
+            self.policy_ls.append(self._init_policy(n_s - n_w - n_ev, n_a, n_w, 0, model_config,
+                                  agent_name='{:d}a'.format(i), n_ev=n_ev))
         self.saver = tf.train.Saver(max_to_keep=5)
         if total_step:
             # training
@@ -231,7 +242,7 @@ class IA2C(A2C):
 
 class MA2C(IA2C):
     def __init__(self, n_s_ls, n_a_ls, n_w_ls, n_f_ls, total_step,
-                 model_config, seed=0):
+                 model_config, seed=0, n_ev_ls=None):
         self.name = 'ma2c'
         self.agents = []
         self.n_agent = len(n_s_ls)
@@ -241,17 +252,22 @@ class MA2C(IA2C):
         self.n_a_ls = n_a_ls
         self.n_f_ls = n_f_ls
         self.n_w_ls = n_w_ls
+        self.n_ev_ls = n_ev_ls if n_ev_ls is not None else [0] * len(n_s_ls)
         self.n_step = model_config.getint('batch_size')
         # init tf
         tf.reset_default_graph()
         tf.set_random_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
         config = tf.ConfigProto(allow_soft_placement=True)
+        config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.OFF
         self.sess = tf.Session(config=config)
         self.policy_ls = []
-        for i, (n_s, n_a, n_w, n_f) in enumerate(zip(self.n_s_ls, self.n_a_ls, self.n_w_ls, self.n_f_ls)):
-            # agent_name is needed to differentiate multi-agents
-            self.policy_ls.append(self._init_policy(n_s - n_f - n_w, n_a, n_w, n_f, model_config,
-                                                    agent_name='{:d}a'.format(i)))
+        for i, (n_s, n_a, n_w, n_f, n_ev) in enumerate(zip(
+                self.n_s_ls, self.n_a_ls, self.n_w_ls, self.n_f_ls, self.n_ev_ls)):
+            self.policy_ls.append(self._init_policy(n_s - n_f - n_w - n_ev, n_a, n_w, n_f,
+                                                    model_config, agent_name='{:d}a'.format(i),
+                                                    n_ev=n_ev))
         self.saver = tf.train.Saver(max_to_keep=5)
         if total_step:
             # training
@@ -262,7 +278,7 @@ class MA2C(IA2C):
 
 
 class IQL(A2C):
-    def __init__(self, n_s_ls, n_a_ls, n_w_ls, total_step, model_config, seed=0, model_type='dqn'):
+    def __init__(self, n_s_ls, n_a_ls, n_w_ls, total_step, model_config, seed=0, model_type='dqn', n_ev_ls=None):
         self.name = 'iql'
         self.model_type = model_type
         self.agents = []
@@ -272,17 +288,20 @@ class IQL(A2C):
         self.n_s_ls = n_s_ls
         self.n_a_ls = n_a_ls
         self.n_w_ls = n_w_ls
+        self.n_ev_ls = n_ev_ls if n_ev_ls is not None else [0] * len(n_s_ls)
         self.n_step = model_config.getint('batch_size')
         # init tf
         tf.reset_default_graph()
         tf.set_random_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
         config = tf.ConfigProto(allow_soft_placement=True)
+        config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.OFF
         self.sess = tf.Session(config=config)
         self.policy_ls = []
-        for i, (n_s, n_a, n_w) in enumerate(zip(self.n_s_ls, self.n_a_ls, self.n_w_ls)):
-            # agent_name is needed to differentiate multi-agents
-            self.policy_ls.append(self._init_policy(n_s, n_a, n_w, model_config,
-                                                    agent_name='{:d}a'.format(i)))
+        for i, (n_s, n_a, n_w, n_ev) in enumerate(zip(self.n_s_ls, self.n_a_ls, self.n_w_ls, self.n_ev_ls)):
+            self.policy_ls.append(self._init_policy(n_s - n_w - n_ev, n_a, n_w, model_config,
+                                                    agent_name='{:d}a'.format(i), n_ev=n_ev))
         self.saver = tf.train.Saver(max_to_keep=5)
         if total_step:
             # training
@@ -292,14 +311,14 @@ class IQL(A2C):
         self.cur_step = 0
         self.sess.run(tf.global_variables_initializer())
 
-    def _init_policy(self, n_s, n_a, n_w, model_config, agent_name=None):
+    def _init_policy(self, n_s, n_a, n_w, model_config, agent_name=None, n_ev=0):
         if self.model_type == 'dqn':
             n_h = model_config.getint('num_h')
             n_fc = model_config.getint('num_fc')
-            policy = DeepQPolicy(n_s - n_w, n_a, n_w, self.n_step, n_fc0=n_fc, n_fc=n_h,
-                                 name=agent_name)
+            policy = DeepQPolicy(n_s, n_a, n_w, self.n_step, n_fc0=n_fc, n_fc=n_h,
+                                 name=agent_name, n_ev=n_ev)
         else:
-            policy = LRQPolicy(n_s, n_a, self.n_step, name=agent_name)
+            policy = LRQPolicy(n_s + n_ev, n_a, self.n_step, name=agent_name)
         return policy
 
     def _init_scheduler(self, model_config):

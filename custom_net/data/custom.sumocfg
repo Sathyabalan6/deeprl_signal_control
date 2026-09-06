@@ -1,0 +1,17 @@
+<configuration>
+  <input>
+    <net-file value="in/custom.net.xml"/>
+    <route-files value="in/custom.rou.xml"/>
+    <additional-files value="in/custom.add.xml"/>
+  </input>
+  <processing>
+    <ignore-route-errors value="true"/>
+  </processing>
+  <report>
+    <no-warnings value="true"/>
+  </report>
+  <time>
+    <begin value="0"/>
+    <end value="3600"/>
+  </time>
+</configuration>

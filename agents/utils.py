@@ -1,6 +1,6 @@
 import numpy as np
 import random
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
 """
 initializers
@@ -39,6 +39,7 @@ def norm_init(scale=DEFAULT_SCALE, mode=DEFAULT_MODE):
         elif mode == 'fan_avg':
             n = 0.5 * (n_in + shape[-1])
         return (scale * a / np.sqrt(n)).astype(np.float32)
+    return _norm_init
 
 DEFAULT_METHOD = ortho_init
 """
@@ -181,7 +182,7 @@ class TransBuffer:
 
 class OnPolicyBuffer(TransBuffer):
     def __init__(self, gamma):
-        self.gamma = gamma
+        self.gamma = gamma if gamma is not None else 0.99
         self.reset()
 
     def reset(self, done=False):
@@ -195,15 +196,21 @@ class OnPolicyBuffer(TransBuffer):
     def add_transition(self, ob, a, r, v, done):
         self.obs.append(ob)
         self.acts.append(a)
-        self.rs.append(r)
-        self.vs.append(v)
-        self.dones.append(done)
+        self.rs.append(0.0 if r is None else r)
+        self.vs.append(0.0 if v is None else v)
+        self.dones.append(False if done is None else done)
 
     def _add_R_Adv(self, R):
+        if R is None:
+            R = 0.0
         Rs = []
         Advs = []
         # use post-step dones here
         for r, v, done in zip(self.rs[::-1], self.vs[::-1], self.dones[:0:-1]):
+            r = 0.0 if r is None else float(r)
+            v = 0.0 if v is None else float(v)
+            done = 0.0 if done is None else float(done)
+            R = 0.0 if R is None else float(R)
             R = r + self.gamma * R * (1.-done)
             Adv = R - v
             Rs.append(R)
@@ -223,7 +230,7 @@ class OnPolicyBuffer(TransBuffer):
         Rs = np.array(self.Rs, dtype=np.float32)
         Advs = np.array(self.Advs, dtype=np.float32)
         # use pre-step dones here
-        dones = np.array(self.dones[:-1], dtype=np.bool)
+        dones = np.array(self.dones[:-1], dtype=np.bool_)
         self.reset(self.dones[-1])
         return obs, acts, dones, Rs, Advs
 
@@ -250,7 +257,7 @@ class ReplayBuffer(TransBuffer):
 
     def sample_transition(self):
         # Randomly sample batch_size examples
-        minibatch = random.sample(self.buffer, self.batch_size)
+        minibatch = random.sample(self.buffer, int(self.batch_size))
         state_batch = np.asarray([data[0] for data in minibatch])
         action_batch = np.asarray([data[1] for data in minibatch])
         next_state_batch = np.asarray([data[3] for data in minibatch])

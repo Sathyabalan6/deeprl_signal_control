@@ -16,7 +16,7 @@ from large_grid.data.build_file import gen_rou_file
 sns.set_color_codes()
 
 
-STATE_NAMES = ['wave', 'wait']
+STATE_NAMES = ['wave', 'wait', 'ev']
 PHASE_NUM = 5
 # map from ild order (alphabeta) to signal order (clockwise from north)
 # STATE_PHASE_MAP = {'nt1': [2, 3, 1, 0], 'nt2': [2, 3, 1, 0],
@@ -43,9 +43,10 @@ class LargeGridPhase(PhaseMap):
 
 
 class LargeGridController:
-    def __init__(self, node_names):
+    def __init__(self, node_names, env=None):
         self.name = 'greedy'
         self.node_names = node_names
+        self.env = env
 
     def forward(self, obs):
         actions = []
@@ -54,10 +55,30 @@ class LargeGridController:
         return actions
 
     def greedy(self, ob, node_name):
-        # hard code the mapping from state to number of cars
+        # Emergency vehicle priority override
+        if self.env is not None:
+            node = self.env.nodes[node_name]
+            phases = ['GGgrrrGGgrrr', 'rrrGrGrrrGrG', 'rrrGGrrrrGGr',
+                      'rrrGGGrrrrrr', 'rrrrrrrrrGGG']
+            for lane in node.lanes_in:
+                try:
+                    vehicle_ids = self.env.sim.lane.getLastStepVehicleIDs(lane)
+                    for vid in vehicle_ids:
+                        vtype = self.env.sim.vehicle.getTypeID(vid)
+                        if 'ambulance' in vtype.lower() or 'emergency' in vtype.lower():
+                            lane_idx = list(node.lanes_in).index(lane)
+                            for phase_action, phase_str in enumerate(phases):
+                                if lane_idx < len(phase_str) and phase_str[lane_idx] in 'Gg':
+                                    return phase_action
+                except Exception:
+                    pass
+        # hard code the mapping from state to number of cars (with tie-breaking)
         flows = [ob[0] + ob[3], ob[2] + ob[5], ob[1] + ob[4],
                  ob[1] + ob[2], ob[4] + ob[5]]
-        return np.argmax(np.array(flows))
+        flows = np.array(flows)
+        max_flow = np.max(flows)
+        max_indices = np.where(flows == max_flow)[0]
+        return int(np.random.choice(max_indices))
 
 
 class LargeGridEnv(TrafficSimulator):

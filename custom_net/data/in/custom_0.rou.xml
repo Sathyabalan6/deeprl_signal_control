@@ -1,0 +1,28 @@
+<routes>
+  <vType id="car" length="5" accel="5" decel="10" speedDev="0.1" color="1,0,0" />
+  <vType id="ambulance" vClass="emergency" length="6" accel="7" decel="12" maxSpeed="50" speedFactor="2.0" color="1,0,0" guiShape="emergency" lcStrategic="1000" lcCooperative="0.0" />
+  <flow id="f_0" departPos="random_free" from="B1C1" to="C0C1" begin="300" end="600" vehsPerHour="75" type="car" />
+  <flow id="f_1" departPos="random_free" from="B1C1" to="C0C1" begin="600" end="900" vehsPerHour="150" type="car" />
+  <flow id="f_2" departPos="random_free" from="A0B0" to="C1C0" begin="600" end="900" vehsPerHour="150" type="car" />
+  <flow id="f_3" departPos="random_free" from="A1A0" to="C0B0" begin="900" end="1200" vehsPerHour="225" type="car" />
+  <flow id="f_4" departPos="random_free" from="C0B0" to="B1B0" begin="900" end="1200" vehsPerHour="225" type="car" />
+  <flow id="f_5" departPos="random_free" from="A1A0" to="A0A1" begin="900" end="1200" vehsPerHour="225" type="car" />
+  <flow id="f_6" departPos="random_free" from="A1A0" to="A0A1" begin="1200" end="1500" vehsPerHour="300" type="car" />
+  <flow id="f_7" departPos="random_free" from="A0B0" to="B0B1" begin="1200" end="1500" vehsPerHour="300" type="car" />
+  <flow id="f_8" departPos="random_free" from="B0C0" to="A1B1" begin="1200" end="1500" vehsPerHour="300" type="car" />
+  <flow id="f_9" departPos="random_free" from="C1C0" to="C0B0" begin="1200" end="1500" vehsPerHour="300" type="car" />
+  <flow id="f_10" departPos="random_free" from="B0C0" to="A1B1" begin="1500" end="1800" vehsPerHour="300" type="car" />
+  <flow id="f_11" departPos="random_free" from="A0B0" to="B1B0" begin="1500" end="1800" vehsPerHour="300" type="car" />
+  <flow id="f_12" departPos="random_free" from="B1A1" to="B1C1" begin="1500" end="1800" vehsPerHour="300" type="car" />
+  <flow id="f_13" departPos="random_free" from="A0B0" to="A1A0" begin="1500" end="1800" vehsPerHour="300" type="car" />
+  <flow id="f_14" departPos="random_free" from="C0C1" to="A0B0" begin="1800" end="2100" vehsPerHour="300" type="car" />
+  <flow id="f_15" departPos="random_free" from="A1A0" to="B0A0" begin="1800" end="2100" vehsPerHour="300" type="car" />
+  <flow id="f_16" departPos="random_free" from="B0C0" to="B0B1" begin="1800" end="2100" vehsPerHour="300" type="car" />
+  <flow id="f_17" departPos="random_free" from="C0C1" to="B0C0" begin="1800" end="2100" vehsPerHour="300" type="car" />
+  <flow id="f_18" departPos="random_free" from="C1C0" to="B1B0" begin="2100" end="2400" vehsPerHour="225" type="car" />
+  <flow id="f_19" departPos="random_free" from="A0A1" to="B0C0" begin="2100" end="2400" vehsPerHour="225" type="car" />
+  <flow id="f_20" departPos="random_free" from="C0B0" to="B0B1" begin="2100" end="2400" vehsPerHour="225" type="car" />
+  <flow id="f_21" departPos="random_free" from="C0B0" to="C0C1" begin="2400" end="2700" vehsPerHour="150" type="car" />
+  <flow id="f_22" departPos="random_free" from="A0A1" to="B0B1" begin="2400" end="2700" vehsPerHour="150" type="car" />
+  <flow id="f_23" departPos="random_free" from="B0A0" to="B1C1" begin="2700" end="3000" vehsPerHour="75" type="car" />
+<vehicle id="ev_0" type="ambulance" depart="0.00"><route edges="B1B0 B0B1" /></vehicle><vehicle id="ev_1" type="ambulance" depart="5.00"><route edges="B0C0 A1A0" /></vehicle><vehicle id="ev_2" type="ambulance" depart="10.00"><route edges="B0A0 A1B1" /></vehicle></routes>

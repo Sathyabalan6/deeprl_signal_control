@@ -24,10 +24,10 @@ SMALL_GRID_NEIGHBOR_MAP = {'nt1': ['npc', 'nt2', 'nt6'],
                            'nt5': ['npc', 'nt4', 'nt6'],
                            'nt6': ['nt1', 'nt5']}
 
-STATE_NAMES = ['wave', 'wait']
+STATE_NAMES = ['wave', 'wait', 'ev']
 # map from ild order (alphabeta) to signal order (clockwise from north)
-STATE_PHASE_MAP = {'nt1': [0, 1, 2], 'nt2': [1, 0], 'nt3': [1, 0],
-                   'nt4': [1, 0], 'nt5': [1, 0], 'nt6': [1, 0]}
+STATE_PHASE_MAP = {'nt1': [0, 1, 2], 'nt2': [0, 1], 'nt3': [0, 1],
+                   'nt4': [0, 1], 'nt5': [0, 1], 'nt6': [0, 1]}
 
 
 class SmallGridPhase(PhaseMap):
@@ -38,9 +38,10 @@ class SmallGridPhase(PhaseMap):
 
 
 class SmallGridController:
-    def __init__(self, node_names):
+    def __init__(self, node_names, env=None):
         self.name = 'greedy'
         self.node_names = node_names
+        self.env = env
 
     def forward(self, obs):
         actions = []
@@ -49,10 +50,35 @@ class SmallGridController:
         return actions
 
     def greedy(self, ob, node_name):
-        # hard code the mapping from state to number of cars
         phases = STATE_PHASE_MAP[node_name]
         flows = ob[:len(phases)]
-        return phases[np.argmax(flows)]
+        
+        # Emergency vehicle priority
+        if self.env is not None:
+            node = self.env.nodes[node_name]
+            
+            # Check all vehicles approaching this intersection
+            for lane in node.lanes_in:
+                try:
+                    vehicle_ids = self.env.sim.lane.getLastStepVehicleIDs(lane)
+                    for vid in vehicle_ids:
+                        vtype = self.env.sim.vehicle.getTypeID(vid)
+                        if 'ambulance' in vtype.lower():
+                            # Find which phase gives green to this lane
+                            lane_idx = node.lanes_in.index(lane)
+                            for phase_action in phases:
+                                phase_str = self.env.phase_map.get_phase(node.phase_id, phase_action)
+                                if lane_idx < len(phase_str) and phase_str[lane_idx] in 'Gg':
+                                    print(f"[EV PRIORITY] {node_name}: Ambulance {vid} on lane {lane}, phase {phase_action}")
+                                    return phase_action
+                except Exception as e:
+                    print(f"Error checking EV: {e}")
+        
+        # Default: most vehicles (with tie-breaker to avoid starvation)
+        max_flow = np.max(flows)
+        max_indices = np.where(flows == max_flow)[0]
+        chosen_index = np.random.choice(max_indices)
+        return phases[chosen_index]
 
 
 class SmallGridEnv(TrafficSimulator):
