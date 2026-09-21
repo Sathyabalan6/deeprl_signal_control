@@ -2,7 +2,7 @@
 
 ## What This Project Does
 
-Multi-agent deep reinforcement learning for traffic signal control in SUMO-simulated road networks. RL agents learn to dynamically control signal phases at intersections to minimize congestion, waiting time, and emergency vehicle delays.
+Multi-agent deep reinforcement learning for traffic signal control in SUMO-simulated road networks. RL agents learn to dynamically control signal phases at intersections to minimize congestion, waiting time, and emergency vehicle delays.further it can be implemented to real life but that requires a input layer as of now it just in stimulation which takes a input as a tag so to get the details form the real life it need a yolo or any other image recognition algo 
 
 ---
 
